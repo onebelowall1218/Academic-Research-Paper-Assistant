@@ -1,5 +1,6 @@
 # Private notes
 docs/project-notes/
+.docs-git/
 
 # Secrets
 .env
