@@ -1,48 +1,64 @@
 # Academic Research Paper Assistant — Agentic GraphRAG 🧠📚
 
-An **AI research assistant** that automates searching, retrieving, and reasoning across hundreds of academic papers. It combines a **multi-agent crew** (CrewAI) with a **Neo4j knowledge graph** and retrieval-augmented generation (GraphRAG) — cutting manual literature-review time by an estimated **40–50%**.
+> A four-agent **CrewAI** pipeline that pulls papers from **arXiv**, stores them as a **Neo4j** graph with vector embeddings, and answers research questions using text retrieved from that graph.
 
-> 📓 Full implementation:
-> [`project.ipynb`](project.ipynb)
+## The problem
 
----
+A literature review means finding papers, reading them, and pulling out what matters. That takes a lot of manual work. This project automates the first pass: give it a question and it will:
 
-## What it does
-- **Fetches** papers from the **arXiv API** on a topic you give it.
-- **Builds a knowledge graph** in **Neo4j** (papers, authors, topics, relationships).
-- **Answers questions** by having agents retrieve relevant subgraphs and reason over them — so answers are **grounded in real papers**, not hallucinated.
+1. Find recent papers on the topic.
+2. Store and index them.
+3. Write an answer from passages it retrieves from them.
+4. Suggest future research directions.
 
-## Why it's interesting
-Plain LLM Q&A over papers hallucinates. Routing retrieval through a **graph** (GraphRAG) keeps answers tied to actual sources and relationships between papers — a more reliable pattern for research and enterprise knowledge.
+## Key capabilities
 
-## Architecture
+| | Capability | How |
+|---|---|---|
+| 📥 | **Ingest** | arXiv search → PDF download → text chunking |
+| 🕸️ | **Graph storage** | `Author -[:WROTE]-> SummaryNode <-[:BELONGS_TO]- TextChunk` in Neo4j |
+| 🔎 | **Semantic retrieval** | Ollama `nomic-embed-text` embeddings + cosine similarity in Cypher (Neo4j GDS) |
+| 🤖 | **Multi-agent reasoning** | 4 CrewAI agents run one after another: search → database lookup → Q&A → future work |
+| ⚡ | **LLM** | `llama-3.3-70b-versatile` served by **Groq** |
+
+## Architecture at a glance
+
+```mermaid
+flowchart LR
+    U([User query]) --> C[CrewAI crew<br/>4 sequential agents]
+    C -- "get papers" --> A[(arXiv API)]
+    C -- embed text --> O[Ollama<br/>nomic-embed-text]
+    C -- Cypher read/write --> N[(Neo4j + GDS)]
+    C -- reasoning --> G[Groq<br/>Llama 3.3 70B]
+    C --> R([Answer + future-work ideas])
 ```
-arXiv API ──► ingest ──► Neo4j knowledge graph
-                                  ▲
-        ┌──────────── agents (CrewAI) ─────────────┐
-        │  planner · graph-retriever · reasoner · writer │
-        └────────────────────────────────────────────────┘
-                       ▲              │
-                  LangChain      LLaMA 3.1  (Ollama / Groq)
-```
-**4 agents · 4 tools**, orchestrated end-to-end.
 
-## Run it
+## Tech stack
+
+`Python 3.10` · `CrewAI` · `LangChain` (loaders, splitters, Ollama/Groq integrations) · `Ollama` · `Groq` · `Neo4j` + Graph Data Science · `arxiv` · `PyMuPDF` · Jupyter
+
+## Quick start
+
 ```bash
-git clone https://github.com/onebelowall1218/Academic-Research-Paper-Assistant
-cd Academic-Research-Paper-Assistant
 pip install -r requirements.txt
+pip install langchain langchain-community langchain-ollama langchain-groq pytz   # imported but not in requirements.txt
 
-# Start a local Neo4j instance (Docker is easiest):
+ollama pull nomic-embed-text                                   # local embedding model
 docker run -d --name neo4j -p 7474:7474 -p 7687:7687 \
-  -e NEO4J_AUTH=neo4j/password neo4j:5
+  -e NEO4J_AUTH=neo4j/password \
+  -e NEO4J_PLUGINS='["graph-data-science"]' neo4j:5            # GDS is required
 
-# Then open the notebook and run the cells:
-jupyter notebook project.ipynb
+cp .env_example .env    # fill in the Neo4j settings and GROQ_API_KEY
+jupyter notebook project.ipynb   # run all cells
 ```
-<!-- TODO(anjum): confirm the Neo4j URI / credentials the notebook expects, and note any GROQ_API_KEY needed. -->
 
-## Stack
-`CrewAI` · `LangChain` · `Ollama` · **LLaMA 3.1** · `Groq` · `Neo4j` · `arXiv API` · `Python`
+> [!WARNING]
+> The notebook currently sets the Groq API key directly in code (the `llm = LLM(...)` cell). Replace it with your own key, or load it from `.env`, before running. See [development guide → Configuration](docs/development.md#configuration).
 
-<!-- TODO(anjum): a short GIF of "ask a question → grounded answer" would make this pop for recruiters. -->
+## 📖 Documentation
+
+| Read this | If you have |
+|---|---|
+| [**docs/index.md**](docs/index.md): mental model, main flow, components, decisions | 2–10 minutes |
+| [**docs/architecture.md**](docs/architecture.md): data model, lifecycle, failures, scaling | a deep dive |
+| [**docs/development.md**](docs/development.md): setup, config, tools API, debugging | hands on the code |
